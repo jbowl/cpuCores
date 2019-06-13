@@ -21,6 +21,7 @@ func fib(n int) int {
 }
 
 func worker(jobs <-chan int, results chan<- int) {
+
 	for n := range jobs {
 		results <- fib(n)
 	}
@@ -29,16 +30,15 @@ func worker(jobs <-chan int, results chan<- int) {
 type cpuData struct {
 	deltaIdleTime  uint64
 	deltaTotalTime uint64
-	cpuUsage       float64
+	cpuUsage       int
 	prevIdleTime   uint64
 	prevTotalTime  uint64
 }
 
 // read cpu usage from /proc/stat
-func cpuUsage(percentUsage chan string) {
+func cpuUsage(percentUsage chan []int) {
 
 	cpus := make([]cpuData, runtime.NumCPU())
-	var sb strings.Builder
 
 	for {
 		for i := 0; i < 2; i++ {
@@ -76,13 +76,13 @@ func cpuUsage(percentUsage chan string) {
 					cpus[core].deltaIdleTime = idleTime - cpus[core].prevIdleTime
 					cpus[core].deltaTotalTime = totalTime - cpus[core].prevTotalTime
 
-					cpus[core].cpuUsage = (1.0 - float64(cpus[core].deltaIdleTime)/float64(cpus[core].deltaTotalTime)) * 100.0
+					cpus[core].cpuUsage = int((1.0 - float64(cpus[core].deltaIdleTime)/float64(cpus[core].deltaTotalTime)) * 100.0)
 
-					sb.WriteString("CPU USAGE: ")
+					c := make([]int, len(cpus))
 
 					for count := 0; count < len(cpus); count++ {
 
-						fmt.Fprintf(&sb, "%.2f ", cpus[count].cpuUsage)
+						c[count] = cpus[count].cpuUsage
 					}
 
 					select {
@@ -92,8 +92,7 @@ func cpuUsage(percentUsage chan string) {
 						}
 
 					default:
-						percentUsage <- sb.String()
-						sb.Reset()
+						percentUsage <- c
 					}
 				}
 				cpus[core].prevIdleTime = idleTime
@@ -107,7 +106,9 @@ func cpuUsage(percentUsage chan string) {
 
 func main() {
 
-	pWorkers := flag.Int("workers", runtime.NumCPU(), "num of worker coroutines")
+	pWorkers := flag.Int("workers", runtime.NumCPU(), "num of worker goroutines")
+	//	workers := runtime.NumCPU()
+	//	pWorkers := &workers
 	pFn := flag.Int("Fn", 50, "num Fibonacci numbers")
 	flag.Parse()
 
@@ -115,22 +116,26 @@ func main() {
 
 	jobs := make(chan int, *pFn)
 	results := make(chan int, *pFn)
-	usages := make(chan string)
 
+	//	cpus := make([]int, runtime.NumCPU())
+
+	usages := make(chan []int)
 	// workers will pull from job channel
+
 	for i := 0; i < *pWorkers; i++ {
 		go worker(jobs, results)
 	}
 
-	go cpuUsage(usages)
-
+	if runtime.GOOS == "linux" {
+		go cpuUsage(usages)
+	}
 	// load up job channel
 	for i := 0; i < *pFn; i++ {
 		jobs <- i
 	}
 
 	close(jobs)
-
+	var sb strings.Builder
 	var strCoreUsage string
 	for i := 0; i < *pFn; {
 		select {
@@ -138,7 +143,14 @@ func main() {
 			fmt.Println(x, "\t", strCoreUsage)
 			i++
 		case usage := <-usages:
-			strCoreUsage = usage
+			sb.WriteString("CPU USAGE: ")
+
+			for count := 0; count < len(usage); count++ {
+				fmt.Fprintf(&sb, "%d ", usage[count])
+			}
+
+			strCoreUsage = sb.String()
+			sb.Reset()
 		}
 	}
 
