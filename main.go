@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -34,7 +35,7 @@ type cpuData struct {
 }
 
 // read cpu usage from /proc/stat
-func cpuUsage(percentUsage chan string, exit chan int) {
+func cpuUsage(percentUsage chan string) {
 
 	cpus := make([]cpuData, runtime.NumCPU())
 	var sb strings.Builder
@@ -81,16 +82,19 @@ func cpuUsage(percentUsage chan string, exit chan int) {
 
 					for count := 0; count < len(cpus); count++ {
 
-						fmt.Fprintf(&sb, "%2f ", cpus[count].cpuUsage)
+						fmt.Fprintf(&sb, "%.2f ", cpus[count].cpuUsage)
 					}
 
 					select {
-					case percentUsage <- sb.String():
-						sb.Reset()
-					case <-exit:
-						return
-					}
+					case _, open := <-percentUsage:
+						if open == false {
+							return
+						}
 
+					default:
+						percentUsage <- sb.String()
+						sb.Reset()
+					}
 				}
 				cpus[core].prevIdleTime = idleTime
 				cpus[core].prevTotalTime = totalTime
@@ -103,49 +107,47 @@ func cpuUsage(percentUsage chan string, exit chan int) {
 
 func main() {
 
-	var count int
+	pWorkers := flag.Int("workers", runtime.NumCPU(), "num of worker coroutines")
+	pFn := flag.Int("Fn", 50, "num Fibonacci numbers")
+	flag.Parse()
 
-	if len(os.Args) > 1 {
-		strCount := os.Args[1]
-		c, err := strconv.ParseInt(strCount, 10, 32)
+	fmt.Println("Caluclating first ", *pFn, "Fn numbers")
+	fmt.Println("worksers = ", *pWorkers)
 
-		if err == nil {
-			count = int(c)
-		}
-	}
+	startTime := time.Now()
 
-	//	c := NewCPUWrapper(runtime.NumCPU())
-
-	jobs := make(chan int, count)
-	results := make(chan int, 10)
+	jobs := make(chan int, *pFn)
+	results := make(chan int, *pFn)
 	usages := make(chan string)
-	exit := make(chan int)
 
-	for i := 0; i < runtime.NumCPU()-1; i++ {
+	// workers will pull from job channel
+	for i := 0; i < *pWorkers; i++ {
 		go worker(jobs, results)
 	}
 
-	go cpuUsage(usages, exit)
+	go cpuUsage(usages)
 
-	for i := 0; i < int(count); i++ {
+	// load up job channel
+	for i := 0; i < *pFn; i++ {
 		jobs <- i
 	}
 
 	close(jobs)
 
-	// i := 0
-	for i := 0; i < int(count); i++ {
-
+	var strCoreUsage string
+	for i := 0; i < *pFn; {
 		select {
 		case x := <-results:
-			fmt.Println(x)
+			fmt.Println(x, "\t", strCoreUsage)
+			i++
 		case usage := <-usages:
-			fmt.Println(usage)
+			strCoreUsage = usage
 		}
-
 	}
 
-	exit <- 1
-
 	close(results)
+
+	elapsedTime := time.Since(startTime)
+
+	fmt.Printf("calculated %d Fn numnbers %d goroutines in %s\n", *pFn, *pWorkers, elapsedTime)
 }
