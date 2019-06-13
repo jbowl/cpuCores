@@ -111,9 +111,6 @@ func main() {
 	pFn := flag.Int("Fn", 50, "num Fibonacci numbers")
 	flag.Parse()
 
-	fmt.Println("Caluclating first ", *pFn, "Fn numbers")
-	fmt.Println("worksers = ", *pWorkers)
-
 	startTime := time.Now()
 
 	jobs := make(chan int, *pFn)
@@ -149,5 +146,5 @@ func main() {
 
 	elapsedTime := time.Since(startTime)
 
-	fmt.Printf("calculated %d Fn numnbers %d goroutines in %s\n", *pFn, *pWorkers, elapsedTime)
+	fmt.Printf("calculated %d Fn numbers using %d goroutines in %s\n", *pFn, *pWorkers, elapsedTime)
 }
