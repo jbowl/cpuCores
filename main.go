@@ -33,111 +33,119 @@ type cpuData struct {
 	prevTotalTime  uint64
 }
 
-type cpuWrapper struct {
-	cpus []cpuData
-}
-
-func NewCPUWrapper(count int) *cpuWrapper {
-	var c cpuWrapper
-	c.cpus = make([]cpuData, count)
-	return &c
-}
-
 // read cpu usage from /proc/stat
-func cpuUsage(c *cpuWrapper) {
+func cpuUsage(percentUsage chan string, exit chan int) {
 
-	//	cores := runtime.NumCPU()
-	//cpus := make([]cpuData, cores)
+	cpus := make([]cpuData, runtime.NumCPU())
+	var sb strings.Builder
 
-	for i := 0; i < 2; i++ {
-		file, err := os.Open("/proc/stat")
-		if err != nil {
-			log.Fatal(err)
-		}
-		scanner := bufio.NewScanner(file)
-		scanner.Scan()
-
-		scanner.Text() // generic
-
-		//for core := 0; core < cores; core++ {
-		for core := 0; core < len(c.cpus); core++ {
-
-			scanner.Scan()
-
-			//	test := scanner.Text()
-			//		fmt.Println(test)
-
-			cpuLine := scanner.Text()[5:] // fix for > 9 cpus
-			file.Close()
-			if err := scanner.Err(); err != nil {
+	for {
+		for i := 0; i < 2; i++ {
+			file, err := os.Open("/proc/stat")
+			if err != nil {
 				log.Fatal(err)
 			}
-			split := strings.Fields(cpuLine)
-			idleTime, _ := strconv.ParseUint(split[3], 10, 64)
-			totalTime := uint64(0)
-			for _, s := range split {
-				u, _ := strconv.ParseUint(s, 10, 64)
-				totalTime += u
+			scanner := bufio.NewScanner(file)
+			scanner.Scan()
+
+			scanner.Text() // generic
+
+			//for core := 0; core < cores; core++ {
+			for core := 0; core < len(cpus); core++ {
+
+				scanner.Scan()
+
+				//	test := scanner.Text()
+				//		fmt.Println(test)
+
+				cpuLine := scanner.Text()[5:] // fix for > 9 cpus
+				file.Close()
+				if err := scanner.Err(); err != nil {
+					log.Fatal(err)
+				}
+				split := strings.Fields(cpuLine)
+				idleTime, _ := strconv.ParseUint(split[3], 10, 64)
+				totalTime := uint64(0)
+				for _, s := range split {
+					u, _ := strconv.ParseUint(s, 10, 64)
+					totalTime += u
+				}
+				if i > 0 {
+
+					cpus[core].deltaIdleTime = idleTime - cpus[core].prevIdleTime
+					cpus[core].deltaTotalTime = totalTime - cpus[core].prevTotalTime
+
+					cpus[core].cpuUsage = (1.0 - float64(cpus[core].deltaIdleTime)/float64(cpus[core].deltaTotalTime)) * 100.0
+
+					sb.WriteString("CPU USAGE: ")
+
+					for count := 0; count < len(cpus); count++ {
+
+						fmt.Fprintf(&sb, "%2f ", cpus[count].cpuUsage)
+					}
+
+					select {
+					case percentUsage <- sb.String():
+						sb.Reset()
+					case <-exit:
+						return
+					}
+
+				}
+				cpus[core].prevIdleTime = idleTime
+				cpus[core].prevTotalTime = totalTime
+
 			}
-			if i > 0 {
-
-				c.cpus[core].deltaIdleTime = idleTime - c.cpus[core].prevIdleTime
-				c.cpus[core].deltaTotalTime = totalTime - c.cpus[core].prevTotalTime
-
-				c.cpus[core].cpuUsage = (1.0 - float64(c.cpus[core].deltaIdleTime)/float64(c.cpus[core].deltaTotalTime)) * 100.0
-			}
-			c.cpus[core].prevIdleTime = idleTime
-			c.cpus[core].prevTotalTime = totalTime
-
+			time.Sleep(time.Second)
 		}
-		time.Sleep(time.Second)
 	}
-
 }
 
 func main() {
 
-	c := NewCPUWrapper(runtime.NumCPU())
+	var count int
 
-	jobs := make(chan int, 100)
+	if len(os.Args) > 1 {
+		strCount := os.Args[1]
+		c, err := strconv.ParseInt(strCount, 10, 32)
 
-	results := make(chan int, 100)
+		if err == nil {
+			count = int(c)
+		}
+	}
 
-	go worker(jobs, results)
-	go worker(jobs, results)
-	//go worker(jobs, results)
-	//go worker(jobs, results)
+	//	c := NewCPUWrapper(runtime.NumCPU())
 
-	//	for i := 0; i < cores; i++ {
-	//		go worker(jobs, results)
-	//		}
+	jobs := make(chan int, count)
+	results := make(chan int, 10)
+	usages := make(chan string)
+	exit := make(chan int)
 
-	for i := 0; i < 100; i++ {
+	for i := 0; i < runtime.NumCPU()-1; i++ {
+		go worker(jobs, results)
+	}
+
+	go cpuUsage(usages, exit)
+
+	for i := 0; i < int(count); i++ {
 		jobs <- i
 	}
 
 	close(jobs)
 
-	for i := 0; i < 100; i++ {
+	// i := 0
+	for i := 0; i < int(count); i++ {
 
 		select {
 		case x := <-results:
 			fmt.Println(x)
-
-		default:
-			cpuUsage(c)
-
-			fmt.Printf("CPU USAGE: ")
-
-			for count := 0; count < len(c.cpus); count++ {
-				fmt.Printf("%2f ", c.cpus[count].cpuUsage)
-			}
-			fmt.Println("")
-
+		case usage := <-usages:
+			fmt.Println(usage)
 		}
 
 	}
 
-	close(results)
+	exit <- 1
 
+	close(results)
 }
