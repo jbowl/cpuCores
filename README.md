@@ -14,3 +14,4 @@ playing around with concurrency
 2971215073       CPU USAGE: 9.00 100.00 100.00 10.10 
 4807526976       CPU USAGE: 8.00 6.93 100.00 5.00 
 calculated 49 Fn numbers using 3 goroutines in 37.701888812s
+ 
