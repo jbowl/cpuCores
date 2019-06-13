@@ -2,9 +2,8 @@ playing around with concurrency
 
 calculates runtime cpu core usage by parsing /proc/stat
 
-I want to see how difficult it would be to alter number of goroutines at runtime relative to cpu usage for long running processes.
 
-./cpuCores -Fn=40 -workers=3  displays first 40 fib numbers using 3 goroutines
+./cpuCores -Fn=40 -workers=3     displays first 40 fib numbers using 3 goroutines
 
 ...
 
