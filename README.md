@@ -1,6 +1,6 @@
 playing around with concurrency
 
-./cpuCores -Fn=40 -workers=2  displays first 40 fib numbers using 2 goroutines
+./cpuCores -Fn=40 -workers=3  displays first 40 fib numbers using 3 goroutines
 
 ...
 
