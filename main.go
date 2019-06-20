@@ -41,15 +41,16 @@ func cpuUsage(percentUsage chan []int) {
 	cpus := make([]cpuData, runtime.NumCPU())
 
 	for {
+		// loop twice for comparison calculations
 		for i := 0; i < 2; i++ {
 			file, err := os.Open("/proc/stat")
 			if err != nil {
 				log.Fatal(err)
 			}
 			scanner := bufio.NewScanner(file)
-			scanner.Scan()
+			scanner.Scan() //ignore first line, not core specific
 
-			scanner.Text() // generic
+			scanner.Text() 
 
 			//for core := 0; core < cores; core++ {
 			for core := 0; core < len(cpus); core++ {
